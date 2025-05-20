@@ -1,6 +1,10 @@
 import kotlin.reflect.KProperty1
 import kotlin.reflect.full.memberProperties
 
+/**
+ * Alters a [s] String to contain escape sequences as text.
+ * @return a new String with the escape sequences represented as text.
+ */
 fun escapeString(s: String): String {
     return s.replace("\\", "\\\\")
         .replace("\"", "\\\"")
@@ -11,6 +15,12 @@ fun escapeString(s: String): String {
         .replace("\u000c", "\\f")
 }
 
+/**
+ * Converts a non JSON [obj] into the proper type of JsonValue.
+ * Most types of [obj] will be converted directly.
+ * Data classes will have their properties converted and stored on a JsonObject.
+ * @return a new JsonValue created from the conversion.
+ */
 fun toJsonValue(obj: Any?): JsonValue {
     return when (obj) {
         null -> JsonNull

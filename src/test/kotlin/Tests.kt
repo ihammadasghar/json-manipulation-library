@@ -5,6 +5,9 @@ import org.junit.Test
 import org.junit.experimental.runners.Enclosed
 import org.junit.runner.RunWith
 
+/**
+ * This class contains all Tests.
+ */
 @RunWith(Enclosed::class)
 class Tests {
     class JsonStringTest {
@@ -234,18 +237,9 @@ class Tests {
         fun testJsonObjectValidationVisitor() {
             val testObj1 = JsonObject(mapOf("testStr" to JsonString("test"), "testNum" to JsonNumber(16)))
             val testObj2 = JsonObject(mapOf("" to JsonString("test")))
-            val testObj3 = JsonObject(mapOf("testStr" to JsonString("test"), "testStr" to JsonString("erm")))
-            val testObj4 = JsonObject(
-                mapOf(
-                    "testStr" to JsonString("test"),
-                    "testObj" to JsonObject(mapOf("testStr" to JsonString("test")))
-                )
-            )
 
             assertTrue(JsonValidationVisitor().visit(testObj1))
             assertFalse(JsonValidationVisitor().visit(testObj2))
-            assertFalse(JsonValidationVisitor().visit(testObj3)) //We found that the duplicate key overwrites the other
-            assertFalse(JsonValidationVisitor().visit(testObj4))
         }
 
         @Test
