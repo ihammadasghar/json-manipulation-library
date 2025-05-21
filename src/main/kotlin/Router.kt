@@ -4,6 +4,7 @@ import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
+import kotlin.reflect.KParameter
 import kotlin.reflect.full.createInstance
 import kotlin.reflect.full.declaredFunctions
 import kotlin.reflect.full.findAnnotation
@@ -32,19 +33,21 @@ class Router(controllers: List<KClass<*>>) {
 
     fun handle(exchange: HttpExchange) {
         try {
-            val path = exchange.requestURI.path.removePrefix("/")
-            val (method, instance) = routes[path] ?: run {
-                sendError(exchange, 404, "Not Found")
-                return
-            }
+            val requestPath = exchange.requestURI.path.removePrefix("/")
+            val matchingRoute = findMatchingRoute(requestPath)
 
-            val parameters = getParameters(exchange, method)
-            val result = method.call(instance, *parameters) ?: ""  //handles null
-            val jsonResponse = toJsonValue(result).toJsonString()
-            sendResponse(exchange, 200, jsonResponse)
+            if (matchingRoute != null) {
+                val (method, instance) = matchingRoute
+                val parameters = getParameters(exchange, method, requestPath)
+                val result = method.call(instance, *parameters) ?: ""
+                val jsonResponse = toJsonValue(result).toJsonString()
+                sendResponse(exchange, 200, jsonResponse)
+            } else {
+                sendError(exchange, 404, "Not Found")
+            }
         } catch (e: InvocationTargetException) {
             val cause = e.cause ?: e
-            println("Exception during method invocation: ${cause.message}") // Log the error
+            println("Exception during method invocation: ${cause.message}")
             sendError(exchange, 500, "Internal Server Error: ${cause.message}")
         } catch (e: Exception) {
             println("Exception: ${e.message}")
@@ -52,33 +55,75 @@ class Router(controllers: List<KClass<*>>) {
         }
     }
 
-    private fun getParameters(exchange: HttpExchange, method: KFunction<*>): Array<Any?> {
-        val queryParams = parseQueryString(exchange.requestURI.query)
-        val pathSegments = exchange.requestURI.path.removePrefix("/").split("/")
-        val methodSegments = method.findAnnotation<Mapping>()?.value?.removePrefix("/")?.split("/") ?: emptyList()
-        val parameters = mutableListOf<Any?>()
-
-        method.parameters.forEach { parameter ->
-            when {
-                parameter.findAnnotation<Path>() != null -> {
-                    val pathParamName = parameter.findAnnotation<Path>()!!.value
-                    val pathParamIndex = methodSegments.indexOf(pathParamName)
-                    if (pathParamIndex != -1 && pathParamIndex < pathSegments.size) {
-                        parameters.add(URLDecoder.decode(pathSegments[pathParamIndex], StandardCharsets.UTF_8.name()))
-                    } else {
-                        parameters.add(null) // Or throw an exception: throw IllegalArgumentException("Path parameter '$pathParamName' not found")
+    private fun findMatchingRoute(requestPath: String): Pair<KFunction<*>, Any>? {
+        val requestSegments = requestPath.split("/")
+        for ((routePath, routeData) in routes) {
+            val routeSegments = routePath.split("/")
+            if (routeSegments.size == requestSegments.size) {
+                var match = true
+                for (i in routeSegments.indices) {
+                    if (routeSegments[i] != requestSegments[i] && !routeSegments[i].startsWith("{")) {
+                        match = false
+                        break
                     }
                 }
-                parameter.findAnnotation<Param>() != null -> {
-                    val paramName = parameter.findAnnotation<Param>()!!.value
-                    parameters.add(queryParams[paramName])
-                }
-                else -> {
-                    parameters.add(null)
+                if (match) {
+                    return routeData
                 }
             }
         }
-        return parameters.toTypedArray()
+        return null
+    }
+
+    private fun getParameters(exchange: HttpExchange, method: KFunction<*>, requestPath: String): Array<Any?> {
+        val queryParams = parseQueryString(exchange.requestURI.query)
+        val pathSegments = requestPath.split("/")
+        val methodSegments = method.findAnnotation<Mapping>()?.value?.removePrefix("/")?.split("/") ?: emptyList()
+        val argumentsForCall = mutableListOf<Any?>()
+
+        val methodParametersMap = method.parameters.associateBy { it.name }
+
+        val pathParams = mutableMapOf<String, String>()
+        for (i in methodSegments.indices) {
+            if (methodSegments[i].startsWith("{") && i < pathSegments.size) {
+                val paramName = methodSegments[i].removeSurrounding("{", "}")
+                pathParams[paramName] = pathSegments[i+1]
+            }
+        }
+
+        method.parameters.forEach { parameter ->
+            if (parameter.kind == KParameter.Kind.INSTANCE) {
+                // Skips the instance of the controller itself
+                return@forEach
+            }
+
+            val paramName = parameter.name
+            val paramType = parameter.type.classifier as? KClass<*>
+
+            val value: String? = when {
+                parameter.findAnnotation<Path>() != null -> {
+                    pathParams[parameter.findAnnotation<Path>()!!.value]
+                }
+                parameter.findAnnotation<Param>() != null -> {
+                    queryParams[parameter.findAnnotation<Param>()!!.value]
+                }
+                else -> null
+            }
+
+            val convertedValue: Any? = when {
+                value == null && parameter.type.isMarkedNullable -> null // Allow null for nullable parameters
+                value == null && !parameter.type.isMarkedNullable -> {
+                    throw IllegalArgumentException("Missing required parameter: ${parameter.name}")
+                }
+                paramType == String::class -> value
+                paramType == Int::class -> value?.toIntOrNull()
+                paramType == Double::class -> value?.toDoubleOrNull()
+                paramType == Boolean::class -> value?.toBooleanStrictOrNull()
+                else -> throw IllegalArgumentException("Unsupported parameter type for conversion: ${paramType?.qualifiedName}")
+            }
+            argumentsForCall.add(convertedValue)
+        }
+        return argumentsForCall.toTypedArray()
     }
 
     private fun parseQueryString(query: String?): Map<String, String?> {
