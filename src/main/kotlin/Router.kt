@@ -9,10 +9,29 @@ import kotlin.reflect.full.createInstance
 import kotlin.reflect.full.declaredFunctions
 import kotlin.reflect.full.findAnnotation
 
+/**
+ * Annotation to define URL mappings.
+ * @property value the value for this annotation.
+ */
 annotation class Mapping(val value: String)
+
+/**
+ * Annotation to map path segments into function arguments.
+ * @property value the value for this annotation.
+ */
 annotation class Path(val value: String)
+
+/**
+ * Annotation to map path arguments into function arguments.
+ * @property value the value for this annotation.
+ */
 annotation class Param(val value: String)
 
+/**
+ *
+ *
+ * @constructor creates a router for the controllers.
+ */
 class Router(controllers: List<KClass<*>>) {
     private val routes: MutableMap<String, Pair<KFunction<*>, Any>> = mutableMapOf()
 
@@ -31,6 +50,9 @@ class Router(controllers: List<KClass<*>>) {
         }
     }
 
+    /**
+     * Tries to handle an [exchange].
+     */
     fun handle(exchange: HttpExchange) {
         try {
             val requestPath = exchange.requestURI.path.removePrefix("/")
@@ -55,6 +77,10 @@ class Router(controllers: List<KClass<*>>) {
         }
     }
 
+    /**
+     * Tries to find a matching route between the [requestPath] and the known [routes].
+     * @return the route data on success and null on failure.
+     */
     private fun findMatchingRoute(requestPath: String): Pair<KFunction<*>, Any>? {
         val requestSegments = requestPath.split("/")
         for ((routePath, routeData) in routes) {
@@ -75,6 +101,9 @@ class Router(controllers: List<KClass<*>>) {
         return null
     }
 
+    /**
+     * 
+     */
     private fun getParameters(exchange: HttpExchange, method: KFunction<*>, requestPath: String): Array<Any?> {
         val queryParams = parseQueryString(exchange.requestURI.query)
         val pathSegments = requestPath.split("/")
@@ -141,6 +170,9 @@ class Router(controllers: List<KClass<*>>) {
             .associate { it }
     }
 
+    /**
+     * Sends a response [response] with code [code] through the HttpExchange [exchange].
+     */
     private fun sendResponse(exchange: HttpExchange, code: Int, response: String) {
         exchange.responseHeaders.set("Content-Type", "application/json")
         val bytes = response.toByteArray(StandardCharsets.UTF_8)
@@ -151,6 +183,9 @@ class Router(controllers: List<KClass<*>>) {
         exchange.close()
     }
 
+    /**
+     * Sends an error message [message] with code [code] through the HttpExchange [exchange].
+     */
     private fun sendError(exchange: HttpExchange, code: Int, message: String) {
         exchange.sendResponseHeaders(code, message.length.toLong())
         val outputStream = exchange.responseBody
