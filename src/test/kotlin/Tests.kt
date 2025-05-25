@@ -1,9 +1,12 @@
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.junit.experimental.runners.Enclosed
 import org.junit.runner.RunWith
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
 /**
  * This class contains all Tests.
@@ -253,6 +256,120 @@ class Tests {
             assertTrue(JsonTypeCheckVisitor().checkArray(testArray2))
             assertFalse(JsonTypeCheckVisitor().checkArray(testArray3))
             assertFalse(JsonTypeCheckVisitor().checkArray(testArray4))
+        }
+    }
+
+    class GetJSONTest {
+        @Mapping("testController")
+        class TestController {
+            @Mapping("testMapping")
+            fun testMapping(): List<String> = listOf("testStr", "testStr2")
+
+            @Mapping("testPath/{testPathvar}")
+            fun testPath(@Path("testPathvar") testPathvar: String): String = testPathvar
+
+            @Mapping("testParam")
+            fun testParam(@Param("testNum") testNum: Int, @Param("testStr") testStr: String): Map<String, String> =
+                mapOf(testStr to testStr.repeat(testNum))
+        }
+
+        @Test
+        fun testInvalidURL() {
+            val server = GetJson(listOf(TestController::class))
+            val client = OkHttpClient()
+
+            server.start(8081)
+
+            val testRequest = Request.Builder().url("http://localhost:8081/testController/testInvalidURL").build()
+            client.newCall(testRequest).execute().use { response ->
+                assertEquals(404, response.code)
+                assertEquals("Not Found", response.body?.string())
+            }
+        }
+
+        @Test
+        fun testMapping() {
+            val client = OkHttpClient()
+            val server = GetJson(listOf(TestController::class))
+
+            server.start(8082)
+
+            val testRequest = Request.Builder().url("http://localhost:8082/testController/testMapping").build()
+            client.newCall(testRequest).execute().use { response ->
+                assertEquals(200, response.code)
+                assertEquals("[\"testStr\",\"testStr2\"]", response.body?.string())
+            }
+        }
+
+        @Test
+        fun testUnsupportedMethod() {
+            val client = OkHttpClient()
+            val server = GetJson(listOf(TestController::class))
+
+            server.start(8083)
+
+            val testRequest = Request.Builder().url("http://localhost:8083/testController/testMapping")
+                .post(okhttp3.RequestBody.create(null, ByteArray(0))).build()
+            client.newCall(testRequest).execute().use { response ->
+                assertEquals(405, response.code)
+                assertEquals("Method Not Allowed", response.body?.string())
+            }
+        }
+
+        @Test
+        fun testPath() {
+            val client = OkHttpClient()
+            val server = GetJson(listOf(TestController::class))
+
+            server.start(8084)
+
+            val testRequest = Request.Builder().url("http://localhost:8084/testController/testPath/testStr").build()
+            client.newCall(testRequest).execute().use { response ->
+                assertEquals(200, response.code)
+                assertEquals("\"testStr\"", response.body?.string())
+            }
+        }
+
+        @Test
+        fun testParam() {
+            val client = OkHttpClient()
+            val server = GetJson(listOf(TestController::class))
+
+            server.start(8085)
+
+            val testRequest = Request.Builder().url("http://localhost:8085/testController/testParam?testNum=2&testStr=test").build()
+            client.newCall(testRequest).execute().use { response ->
+                assertEquals(200, response.code)
+                assertEquals("{\"test\":\"testtest\"}", response.body?.string())
+            }
+        }
+
+        @Test
+        fun testMissingParam() {
+            val client = OkHttpClient()
+            val server = GetJson(listOf(TestController::class))
+
+            server.start(8086)
+
+            val testRequest = Request.Builder().url("http://localhost:8086/testController/testParam?testNum=2").build()
+            client.newCall(testRequest).execute().use { response ->
+                assertEquals(500, response.code)
+                assertNotNull(response.body?.string()?.contains("Missing required parameter: testStr"))
+            }
+        }
+
+        @Test
+        fun testInvalidParam() {
+            val client = OkHttpClient()
+            val server = GetJson(listOf(TestController::class))
+
+            server.start(8087)
+
+            val testRequest = Request.Builder().url("http://localhost:8087/testController/testParam?testNum=invalid&testStr=test").build()
+            client.newCall(testRequest).execute().use { response ->
+                assertEquals(500, response.code)
+                assertNotNull(response.body?.string()?.contains("NumberFormatException"))
+            }
         }
     }
 }

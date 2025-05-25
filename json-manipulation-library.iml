@@ -22,5 +22,6 @@
         <SOURCES />
       </library>
     </orderEntry>
+    <orderEntry type="library" name="squareup.okhttp3.okhttp" level="project" />
   </component>
 </module>
